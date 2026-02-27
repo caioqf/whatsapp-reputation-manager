@@ -1,0 +1,28 @@
+version = 0.1
+
+# ── Build (compartilhado) ──────────────────────
+[default.build.parameters]
+cached = true
+parallel = true
+
+# ── Dev ───────────────────────────────────────
+[dev.global.parameters]
+stack_name = "sam-ar-whatsapp-reputation-dev"
+
+[dev.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = false
+resolve_s3 = true
+region = "us-east-1"
+parameter_overrides = "Environment=dev"
+
+# ── Prod ──────────────────────────────────────
+[prod.global.parameters]
+stack_name = "sam-ar-whatsapp-reputation-prod"
+
+[prod.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+resolve_s3 = true
+region = "us-east-1"
+parameter_overrides = "Environment=prod"

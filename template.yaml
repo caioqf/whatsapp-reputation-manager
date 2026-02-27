@@ -1,0 +1,201 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: WhatsApp Reputation Monitor
+
+# ──────────────────────────────────────────────
+# Parameters
+# ──────────────────────────────────────────────
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Deployment environment
+
+  AlertRecipients:
+    Type: String
+    Description: Comma-separated list of email addresses for reputation alerts
+
+  SesFromEmail:
+    Type: String
+    Description: Verified SES sender email address
+
+  ProvidersEnabled:
+    Type: String
+    Default: gupshup
+    Description: Comma-separated list of enabled provider names
+
+  GupshupApiKey:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: Gupshup API key
+
+  GupshupPartnerToken:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: Gupshup partner token
+
+  GupshupBaseUrl:
+    Type: String
+    Default: 'https://partner.gupshup.io/partner/app'
+    Description: Gupshup Partner API base URL
+
+  PollingScheduleExpression:
+    Type: String
+    Default: 'rate(15 minutes)'
+    Description: EventBridge schedule expression for polling
+
+# ──────────────────────────────────────────────
+# Globals
+# ──────────────────────────────────────────────
+Globals:
+  Function:
+    Architectures:
+      - arm64
+    Environment:
+      Variables:
+        TABLE_WHATSAPP_NUMBERS: !Ref WhatsAppNumbersTable
+        TABLE_REPUTATION_EVENTS: !Ref ReputationEventsTable
+        SQS_QUEUE_URL: !Ref ReputationEventsQueue
+        ALERT_RECIPIENTS: !Ref AlertRecipients
+        SES_FROM_EMAIL: !Ref SesFromEmail
+        PROVIDERS_ENABLED: !Ref ProvidersEnabled
+        NODE_OPTIONS: '--enable-source-maps'
+        ENVIRONMENT: !Ref Environment
+
+# ──────────────────────────────────────────────
+# Resources
+# ──────────────────────────────────────────────
+Resources:
+
+  # ── SQS ──────────────────────────────────────
+  ReputationEventsDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub 'whatsapp-reputation-${Environment}-dlq'
+      MessageRetentionPeriod: 1209600  # 14 days
+
+  ReputationEventsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub 'whatsapp-reputation-${Environment}-events'
+      VisibilityTimeout: 60
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ReputationEventsDLQ.Arn
+        maxReceiveCount: 3
+
+  # ── DynamoDB ─────────────────────────────────
+  WhatsAppNumbersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'whatsapp-reputation-${Environment}-numbers'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: phoneNumber
+          AttributeType: S
+      KeySchema:
+        - AttributeName: phoneNumber
+          KeyType: HASH
+
+  ReputationEventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'whatsapp-reputation-${Environment}-events'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: phoneNumber
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: phoneNumber
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+
+  # ── Lambda: PollingOrchestrator ───────────────
+  PollingOrchestratorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      ImageConfig:
+        Command:
+          - dist/polling/handler.handler
+      Timeout: 300
+      MemorySize: 256
+      Environment:
+        Variables:
+          GUPSHUP_API_KEY: !Ref GupshupApiKey
+          GUPSHUP_PARTNER_TOKEN: !Ref GupshupPartnerToken
+          GUPSHUP_BASE_URL: !Ref GupshupBaseUrl
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref WhatsAppNumbersTable
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt ReputationEventsQueue.QueueName
+      Events:
+        PollingSchedule:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: !Ref PollingScheduleExpression
+            State: ENABLED
+    Metadata:
+      DockerfileLocation: Dockerfile
+
+  # ── Lambda: ReputationProcessor ──────────────
+  ReputationProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      ImageConfig:
+        Command:
+          - dist/processor/handler.handler
+      Timeout: 30
+      MemorySize: 256
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref WhatsAppNumbersTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ReputationEventsTable
+        - SQSPollerPolicy:
+            QueueName: !GetAtt ReputationEventsQueue.QueueName
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
+              Resource: '*'
+      Events:
+        SQSTrigger:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt ReputationEventsQueue.Arn
+            BatchSize: 5
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+    Metadata:
+      DockerfileLocation: Dockerfile
+
+# ──────────────────────────────────────────────
+# Outputs
+# ──────────────────────────────────────────────
+Outputs:
+  ReputationEventsQueueUrl:
+    Description: URL of the SQS reputation events queue
+    Value: !Ref ReputationEventsQueue
+
+  ReputationEventsDLQUrl:
+    Description: URL of the SQS dead-letter queue
+    Value: !Ref ReputationEventsDLQ
+
+  WhatsAppNumbersTableName:
+    Description: Name of the WhatsAppNumbers DynamoDB table
+    Value: !Ref WhatsAppNumbersTable
+
+  ReputationEventsTableName:
+    Description: Name of the ReputationEvents DynamoDB table
+    Value: !Ref ReputationEventsTable

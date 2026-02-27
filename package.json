@@ -1,0 +1,29 @@
+{
+  "name": "sam-ar-whatsapp-reputation",
+  "version": "1.0.0",
+  "description": "WhatsApp Reputation Monitor – AWS SAM Project",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "sam:build": "sam build",
+    "sam:deploy:dev": "sam deploy --config-env dev",
+    "sam:deploy:prod": "sam deploy --config-env prod",
+    "sam:local": "sam local invoke PollingOrchestratorFunction"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.0.0",
+    "@aws-sdk/client-ses": "^3.0.0",
+    "@aws-sdk/client-sqs": "^3.0.0",
+    "@aws-sdk/lib-dynamodb": "^3.0.0",
+    "axios": "^1.7.0",
+    "pino": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
+  }
+}
