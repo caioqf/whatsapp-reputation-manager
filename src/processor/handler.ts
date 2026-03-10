@@ -1,6 +1,7 @@
 import { SQSEvent, SQSRecord, SQSBatchResponse } from 'aws-lambda'
-import { NormalizedReputationStatus } from '../shared/types'
+import { NormalizedReputationStatus, RawWebhookMessage, SqsMessage } from '../shared/types'
 import { processReputationEvent } from '../shared/status-engine'
+import { registry } from '../shared/provider.registry'
 import { logger } from '../shared/logger'
 
 export async function handler(event: SQSEvent): Promise<SQSBatchResponse> {
@@ -21,8 +22,28 @@ export async function handler(event: SQSEvent): Promise<SQSBatchResponse> {
 async function processRecord(record: SQSRecord): Promise<void> {
   logger.info({ messageId: record.messageId }, 'processing_record')
 
-  const event = JSON.parse(record.body) as NormalizedReputationStatus
-  await processReputationEvent(event)
+  const message = JSON.parse(record.body) as SqsMessage
+  const normalized = isRawWebhook(message) ? normalize(message) : message
 
-  logger.info({ messageId: record.messageId, phoneNumber: event.phoneNumber }, 'record_processed')
+  await processReputationEvent(normalized)
+
+  logger.info({ messageId: record.messageId, phoneNumber: normalized.phoneNumber }, 'record_processed')
+}
+
+function isRawWebhook(message: SqsMessage): message is RawWebhookMessage {
+  return message.source === 'WEBHOOK' && !('phoneNumber' in message)
+}
+
+function normalize(message: RawWebhookMessage): NormalizedReputationStatus {
+  const provider = registry.get(message.provider)
+
+  if (!provider) {
+    throw new Error(`Provider not found or not enabled: ${message.provider}`)
+  }
+
+  if (!provider.supportsWebhook()) {
+    throw new Error(`Provider does not support webhooks: ${message.provider}`)
+  }
+
+  return provider.parseWebhook(message.rawPayload)
 }

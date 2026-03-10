@@ -2,9 +2,6 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: WhatsApp Reputation Monitor
 
-# ──────────────────────────────────────────────
-# Parameters
-# ──────────────────────────────────────────────
 Parameters:
   Environment:
     Type: String
@@ -49,9 +46,6 @@ Parameters:
     Default: 'rate(15 minutes)'
     Description: EventBridge schedule expression for polling
 
-# ──────────────────────────────────────────────
-# Globals
-# ──────────────────────────────────────────────
 Globals:
   Function:
     Architectures:
@@ -67,12 +61,8 @@ Globals:
         NODE_OPTIONS: '--enable-source-maps'
         ENVIRONMENT: !Ref Environment
 
-# ──────────────────────────────────────────────
-# Resources
-# ──────────────────────────────────────────────
 Resources:
 
-  # ── SQS ──────────────────────────────────────
   ReputationEventsDLQ:
     Type: AWS::SQS::Queue
     Properties:
@@ -88,7 +78,6 @@ Resources:
         deadLetterTargetArn: !GetAtt ReputationEventsDLQ.Arn
         maxReceiveCount: 3
 
-  # ── DynamoDB ─────────────────────────────────
   WhatsAppNumbersTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -117,7 +106,6 @@ Resources:
         - AttributeName: timestamp
           KeyType: RANGE
 
-  # ── Lambda: PollingOrchestrator ───────────────
   PollingOrchestratorFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -146,7 +134,6 @@ Resources:
     Metadata:
       DockerfileLocation: Dockerfile
 
-  # ── Lambda: ReputationProcessor ──────────────
   ReputationProcessorFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -180,9 +167,6 @@ Resources:
     Metadata:
       DockerfileLocation: Dockerfile
 
-# ──────────────────────────────────────────────
-# Outputs
-# ──────────────────────────────────────────────
 Outputs:
   ReputationEventsQueueUrl:
     Description: URL of the SQS reputation events queue
