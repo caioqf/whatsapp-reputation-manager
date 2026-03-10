@@ -16,6 +16,16 @@ export type WhatsAppNumberRecord = {
     last_source: 'WEBHOOK' | 'POLLING';
     last_alert_status?: ReputationStatus;
 };
+/**
+ * Format expected from the external webhook service when publishing to SQS.
+ * The processor uses the provider registry to normalize this into NormalizedReputationStatus.
+ */
+export type RawWebhookMessage = {
+    source: 'WEBHOOK';
+    provider: string;
+    rawPayload: unknown;
+};
+export type SqsMessage = NormalizedReputationStatus | RawWebhookMessage;
 export type ReputationEventRecord = {
     phoneNumber: string;
     timestamp: string;
